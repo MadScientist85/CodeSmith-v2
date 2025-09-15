@@ -7,6 +7,12 @@
     Chat SDK is a free, open-source template built with Next.js and the AI SDK that helps you quickly build powerful chatbot applications.
 </p>
 
+'use client';
+import { Button } from '@/components/ui/button';
+export function V0Button() {
+  return <Button onClick={() => window.open('https://v0.dev/chat?project=ai-chatbot', '_blank')} variant="outline">Edit in v0.dev</Button>;
+}
+
 <p align="center">
   <a href="https://chat-sdk.dev"><strong>Read Docs</strong></a> ·
   <a href="#features"><strong>Features</strong></a> ·
