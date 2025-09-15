@@ -1,0 +1,111 @@
+// OpenRouter Provider Implementation
+import { BaseAIProvider, type AIResponse, type AIStreamChunk, type ChatRequest } from "./base"
+import { openai } from "@ai-sdk/openai"
+import { generateText, streamText } from "ai"
+
+export class OpenRouterProvider extends BaseAIProvider {
+  name = "openrouter"
+  models = [
+    "meta-llama/llama-3.2-90b-vision-instruct",
+    "anthropic/claude-3.5-sonnet",
+    "openai/gpt-4o",
+    "google/gemini-pro-1.5",
+    "mistralai/mistral-large-2407",
+    "qwen/qwen-2.5-72b-instruct",
+    "deepseek/deepseek-chat",
+  ]
+
+  private client: any
+
+  async initialize(apiKey: string, config: Record<string, any> = {}): Promise<void> {
+    await super.initialize(apiKey, config)
+    this.client = openai({
+      apiKey: this.apiKey,
+      baseURL: "https://openrouter.ai/api/v1",
+    })
+  }
+
+  async generateText(request: ChatRequest): Promise<AIResponse> {
+    const startTime = Date.now()
+
+    try {
+      const messages = request.messages.map((msg) => ({
+        role: msg.role,
+        content: msg.parts.map((part) => part.content).join("\n"),
+      }))
+
+      const result = await generateText({
+        model: this.client(request.modelId),
+        messages,
+        system: request.systemPrompt,
+        temperature: request.params?.temperature ?? 0.7,
+        maxTokens: request.params?.maxTokens ?? 2000,
+        topP: request.params?.topP ?? 1,
+        tools: request.tools,
+      })
+
+      const responseTime = Date.now() - startTime
+
+      this.updateUsage(result.usage.promptTokens, result.usage.completionTokens)
+
+      return {
+        content: result.text,
+        usage: {
+          inputTokens: result.usage.promptTokens,
+          outputTokens: result.usage.completionTokens,
+          totalTokens: result.usage.totalTokens,
+        },
+        model: request.modelId,
+        finishReason: result.finishReason,
+        responseTime,
+        toolCalls: result.toolCalls,
+      }
+    } catch (error) {
+      this.updateUsage(0, 0, true)
+      throw error
+    }
+  }
+
+  async *streamText(request: ChatRequest): AsyncIterable<AIStreamChunk> {
+    try {
+      const messages = request.messages.map((msg) => ({
+        role: msg.role,
+        content: msg.parts.map((part) => part.content).join("\n"),
+      }))
+
+      const result = streamText({
+        model: this.client(request.modelId),
+        messages,
+        system: request.systemPrompt,
+        temperature: request.params?.temperature ?? 0.7,
+        maxTokens: request.params?.maxTokens ?? 2000,
+        topP: request.params?.topP ?? 1,
+        tools: request.tools,
+      })
+
+      for await (const chunk of result.textStream) {
+        yield {
+          type: "text",
+          delta: chunk,
+        }
+      }
+
+      const usage = await result.usage
+      this.updateUsage(usage.promptTokens, usage.completionTokens)
+
+      yield {
+        type: "done",
+        usage: {
+          inputTokens: usage.promptTokens,
+          outputTokens: usage.completionTokens,
+        },
+      }
+    } catch (error) {
+      this.updateUsage(0, 0, true)
+      yield {
+        type: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
+      }
+    }
+  }
+}
